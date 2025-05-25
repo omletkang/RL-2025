@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+
+# Logs and checkpoints
+run/
+*.pickle
+
+# Environment
+env/
+.venv/
+*.egg-info/
+
+# VSCode or JetBrains
+.vscode/
+.idea/
+
+# Jupyter or IPython
+.ipynb_checkpoints/
