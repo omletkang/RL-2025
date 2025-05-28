@@ -60,21 +60,44 @@ class RealWorldRobotEnv:
         self.robot.close()
 
 
-def rollout(agent, length=200, train=False, random=False):
+def rollout(agent, length=80, train=False, random=False):
     env = RealWorldRobotEnv()
-    state = env.reset()
+    initial_state = env.reset()
+    initial_z = env.robot.get_tcp_pose()[2]
+    final_z = initial_z + 0.15
+
     episode_return = 0
+    state = initial_state
+
     for t in range(length):
+        # Step 1: Move in Z direction manually
+        if t < 40:
+            z_cmd = initial_z  # hold for 3s
+        else:
+            # Linear move over 40 steps
+            progress = (t - 40) / 40.0
+            z_cmd = initial_z + progress * 0.15
+
+        env.robot.set_tcp_z(z_cmd)  # You need to implement this in URRobot class
+
+        # Step 2: Choose action
         if random:
             action = np.random.uniform(-1, 1)
         else:
             action = agent.act(state, train=train)
 
+        # Step 3: Execute and store
         next_state, reward, done, _ = env.step(action)
         agent.replay_buffer.append([state, action, [reward], next_state, [not done]])
         episode_return += reward
         state = next_state
-        if done:
-            break
+
+        time.sleep(0.05)  # 20Hz
+
+    # After episode
+    env.robot.move_to_initial_pose()  # Move back to initial z
+    time.sleep(5.0)  # Allow user to rearrange
     env.close()
+
     return episode_return
+

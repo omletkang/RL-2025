@@ -2,7 +2,7 @@ from dynamixel_sdk import *  # Uses Dynamixel SDK library
 
 
 class Gripper:
-    def __init__(self, device_name="/dev/ttyUSB0", dxl_id=1, baudrate=3000000):
+    def __init__(self, device_name="/dev/ttyUSB1", dxl_id=1, baudrate=3000000):
         self.DXL_ID = dxl_id
         self.DEVICENAME = device_name
         self.BAUDRATE = baudrate

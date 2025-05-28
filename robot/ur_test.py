@@ -20,7 +20,7 @@ def main():
     print("Sending servoJ command...")
     # rtde_c.servoJ(q, 0.5, 0.5, 0.01, 0.2, 300)  # target_q, velocity, acceleration, dt, lookahead_time, gain
     p = [0.1946, -0.2212, 0.1640, 1.10417, 1.12385, -0.027471]
-    rtde_c.moveL(p, 0.06, 0.2) # velocity, accelration
+    # rtde_c.moveL(p, 0.06, 0.2) # velocity, accelration
     time.sleep(2.0)
 
     rtde_c.servoStop()

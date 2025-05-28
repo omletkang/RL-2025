@@ -1,7 +1,7 @@
 import serial
 
 class FSRSensor:
-    def __init__(self, port="/dev/ttyACM0", baudrate=9600, timeout=1):
+    def __init__(self, port="/dev/ttyUSB0", baudrate=9600, timeout=1):
         self.port = port
         self.baudrate = baudrate
         self.timeout = timeout
@@ -30,7 +30,7 @@ class FSRSensor:
 
 if __name__ == "__main__":
 
-    sensor = FSRSensor(port="/dev/ttyACM0")
+    sensor = FSRSensor(port="/dev/ttyUSB0")
 
     try:
         for _ in range(100):
