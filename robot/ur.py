@@ -18,7 +18,7 @@ class URRobot:
         Moves robot in task space using moveL.
         :param pose: List of 6 values [x, y, z, Rx, Ry, Rz]
         """
-        self.rtde_c.moveP(pose, velocity, acceleration) # L
+        self.rtde_c.moveL(pose, velocity, acceleration) # MoveL instead of ServoL
 
     def move_joint(self, q, velocity=1.0, acceleration=1.0):
         """
@@ -31,8 +31,8 @@ class URRobot:
         pose = self.get_tcp_pose()
         new_pose = pose.copy()
         new_pose[2] = z_val
-        # self.moveL(new_pose)  # or moveP
-        self.rtde_c.moveL(new_pose, 0.06, 0.2)
+        self.move_tcp(new_pose)  # or moveP
+        
 
     def move_to_initial_pose(self):
         pose = self.get_tcp_pose()

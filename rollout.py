@@ -1,7 +1,7 @@
 import time
 import numpy as np
 from collections import deque
-
+import threading  # For threading support
 from robot.gripper import Gripper
 from robot.ur import URRobot
 from robot.fsr_sensor import FSRSensor
@@ -36,7 +36,7 @@ class RealWorldRobotEnv:
     def step(self, action):
         pos = self.normalize_action(action)
         self.gripper.set_position(pos)
-        time.sleep(0.05)  # 20 Hz
+        time.sleep(0.01)  # 20 Hz # 100 Hz
         next_state = self.get_state()
         reward = self.compute_reward(next_state)
         done = False  # For now, we assume infinite horizon
@@ -50,7 +50,7 @@ class RealWorldRobotEnv:
 
     def reset(self):
         # Reset robot to initial state
-        init_pos = self.normalize_action(0.0)
+        init_pos = self.normalize_action(-1.0)
         self.gripper.set_position(init_pos)
         time.sleep(1.0)
         return self.get_state()
@@ -60,25 +60,31 @@ class RealWorldRobotEnv:
         self.robot.close()
 
 
-def rollout(agent, length=80, train=False, random=False):
+def move_robot_up_at_t80(env, initial_z, final_z):
+    """Thread function to move the robot up at t=80."""
+    # Move robot up once at t = 80
+    z_cmd = initial_z + 0.15
+    env.robot.set_tcp_z(z_cmd)  # Command to move the robot
+
+def rollout(agent, length=140, train=False, random=False):
     env = RealWorldRobotEnv()
     initial_state = env.reset()
+    env.robot.move_to_initial_pose()  # Move back to initial z
     initial_z = env.robot.get_tcp_pose()[2]
     final_z = initial_z + 0.15
 
     episode_return = 0
     state = initial_state
 
-    for t in range(length):
-        # Step 1: Move in Z direction manually
-        if t < 40:
-            z_cmd = initial_z  # hold for 3s
-        else:
-            # Linear move over 40 steps
-            progress = (t - 40) / 40.0
-            z_cmd = initial_z + progress * 0.15
+    # Flag to check if the robot has started moving
+    robot_moving = False
 
-        env.robot.set_tcp_z(z_cmd)  # You need to implement this in URRobot class
+    for t in range(length):
+        if t == 80 and not robot_moving:
+            # Start robot movement in a separate thread
+            move_thread = threading.Thread(target=move_robot_up_at_t80, args=(env, initial_z, final_z))
+            move_thread.start()
+            robot_moving = True
 
         # Step 2: Choose action
         if random:
@@ -92,12 +98,13 @@ def rollout(agent, length=80, train=False, random=False):
         episode_return += reward
         state = next_state
 
-        time.sleep(0.05)  # 20Hz
+        time.sleep(0.01)  # 20Hz # 100 Hz
 
+    time.sleep(5.0)  # Hold on for 1 sec
     # After episode
+    _ = env.reset()
     env.robot.move_to_initial_pose()  # Move back to initial z
-    time.sleep(5.0)  # Allow user to rearrange
+    time.sleep(1.0)  # Allow user to rearrange
     env.close()
 
     return episode_return
-

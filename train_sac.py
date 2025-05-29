@@ -42,7 +42,7 @@ def main():
     for episode in range(start_episode, start_episode + args.n_episodes):
         now = datetime.now().isoformat()
         print(f'\nEpisode {episode} {now}')
-
+        
         if episode < 10:
             print('Collecting random episode')
             episode_return = rollout(sac, random=True)
