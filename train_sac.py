@@ -27,7 +27,7 @@ def main():
         start_episode = 0
     else:
         project_dir = args.resume
-        list_of_files = glob.glob(f'{args.resume}/td3_*')
+        list_of_files = glob.glob(f'{args.resume}/sac_*')
         latest_file = max(list_of_files, key=os.path.getctime)
         start_episode = int(latest_file.split('.')[-2].split('_')[-1]) + 1
 
@@ -62,7 +62,7 @@ def main():
             for _ in range(len(sac.replay_buffer) * 10):
                 sac.update_parameters()
 
-        with open(f'{project_dir}/td3_{episode}.pickle', 'wb') as f:
+        with open(f'{project_dir}/sac_{episode}.pickle', 'wb') as f:
             pickle.dump(sac, f)
 
 

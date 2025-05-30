@@ -36,7 +36,15 @@ class Critic(nn.Module):
         self.net1 = MLP(obs_size+act_size, 1, hidden_size)
         self.net2 = MLP(obs_size+act_size, 1, hidden_size)
 
+    # def forward(self, state, action):
+    #     state_action = torch.cat([state, action], 1)
+    #     return self.net1(state_action), self.net2(state_action)
+    
     def forward(self, state, action):
+        # Ensure action is 2D before concatenation
+        if action.ndimension() == 1:  # If action is 1D, make it 2D
+            action = action.unsqueeze(1)  # Add the second dimension for concatenation
+
         state_action = torch.cat([state, action], 1)
         return self.net1(state_action), self.net2(state_action)
 
@@ -80,13 +88,12 @@ class Actor(nn.Module):
 
 class SAC:
     def __init__(self,
-            device,
-            obs_size,
-            act_size,
-            hidden_size=256,
-            gamma=0.99,
-            tau=0.005
-    ):
+                 device,
+                 obs_size,
+                 act_size,
+                 hidden_size=256,
+                 gamma=0.99,
+                 tau=0.005):
         self.device = device
         self.gamma = gamma
         self.tau = tau
@@ -109,6 +116,7 @@ class SAC:
         self.replay_buffer = deque(maxlen=1000000)
 
     def act(self, state, train=True):
+        state = torch.FloatTensor(state).to(self.device)  # Ensure state is on the correct device
         return self.actor.select_action(state, self.device, sample=train)
 
     def update_parameters(self, batch_size=256):
@@ -116,12 +124,18 @@ class SAC:
             return
 
         batch = random.sample(self.replay_buffer, k=batch_size)
-        state, action, reward, next_state, not_done = [torch.FloatTensor(t).to(self.device) for t in zip(*batch)]
+        
+        # Convert entire batch to numpy arrays and then to tensors
+        state, action, reward, next_state, not_done = zip(*batch)
+        state = torch.FloatTensor(np.array(state)).to(self.device)
+        action = torch.FloatTensor(np.array(action)).to(self.device)
+        reward = torch.FloatTensor(np.array(reward)).to(self.device)
+        next_state = torch.FloatTensor(np.array(next_state)).to(self.device)
+        not_done = torch.FloatTensor(np.array(not_done)).to(self.device)
 
         alpha = self.log_alpha.exp().item()
 
         # Update critic
-
         with torch.no_grad():
             next_action, next_action_log_prob = self.actor.sample(next_state)
             q1_next, q2_next = self.critic_target(next_state, next_action)
@@ -130,8 +144,8 @@ class SAC:
             q_target = reward + not_done * self.gamma * value_next
 
         q1, q2 = self.critic(state, action)
-        q1_loss = 0.5*F.mse_loss(q1, q_target)
-        q2_loss = 0.5*F.mse_loss(q2, q_target)
+        q1_loss = 0.5 * F.mse_loss(q1, q_target)
+        q2_loss = 0.5 * F.mse_loss(q2, q_target)
         critic_loss = q1_loss + q2_loss
 
         self.critic_optimizer.zero_grad()
@@ -139,21 +153,19 @@ class SAC:
         self.critic_optimizer.step()
 
         for target_param, param in zip(self.critic_target.parameters(), self.critic.parameters()):
-            target_param.data.copy_((1.0-self.tau)*target_param.data + self.tau*param.data)
+            target_param.data.copy_((1.0 - self.tau) * target_param.data + self.tau * param.data)
 
         # Update actor
-
         action_new, action_new_log_prob = self.actor.sample(state)
         q1_new, q2_new = self.critic(state, action_new)
         q_new = torch.min(q1_new, q2_new)
-        actor_loss = (alpha*action_new_log_prob - q_new).mean()
+        actor_loss = (alpha * action_new_log_prob - q_new).mean()
 
         self.actor_optimizer.zero_grad()
         actor_loss.backward()
         self.actor_optimizer.step()
 
         # Update alpha
-
         alpha_loss = -(self.log_alpha.exp() * (action_new_log_prob + self.target_entropy).detach()).mean()
 
         self.alpha_optimizer.zero_grad()
