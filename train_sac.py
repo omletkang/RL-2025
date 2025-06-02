@@ -2,6 +2,7 @@ import os
 import argparse
 import pickle
 import glob
+from tqdm import tqdm 
 from datetime import datetime
 
 import torch
@@ -11,12 +12,14 @@ from rollout import rollout, RealWorldRobotEnv
 
 def main():
     parser = argparse.ArgumentParser(description='Train SAC on Real Robot')
-    parser.add_argument('--n_episodes', default=100, type=int)
+    parser.add_argument('--n_episodes', default=20, type=int)
     parser.add_argument('--resume', default='', type=str)
     args = parser.parse_args()
 
     obs_size = 4  # TCP Z, Gripper Pos, FSR A0, A1
     act_size = 1  # Gripper action
+
+    EPISODES_PER_TRAINING = 10  # Collect 10 episodes before each training phase
 
     os.makedirs('run', exist_ok=True)
 
@@ -57,10 +60,12 @@ def main():
         with open(f'{project_dir}/episode_{episode}.pickle', 'wb') as f:
             pickle.dump((list(sac.replay_buffer), []), f)
 
-        if episode >= 9:
-            print('Training...')
-            for _ in range(len(sac.replay_buffer) * 10):
+        if episode >= 9 and (episode + 1) % EPISODES_PER_TRAINING == 0:
+            print(f'Training... (Episodes {episode-EPISODES_PER_TRAINING+1} to {episode})')
+            n_updates = len(sac.replay_buffer) * 10
+            for _ in tqdm(range(n_updates), desc=f"Training after ep {episode}"):
                 sac.update_parameters()
+
 
         with open(f'{project_dir}/sac_{episode}.pickle', 'wb') as f:
             pickle.dump(sac, f)

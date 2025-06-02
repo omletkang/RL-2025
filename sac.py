@@ -74,8 +74,11 @@ class Actor(nn.Module):
 
         return action, log_prob
 
-    def select_action(self, state, device, sample=True):
-        state = torch.FloatTensor(state).to(device).unsqueeze(0)
+    def select_action(self, state, device=None, sample=True):
+        # Ensure state is on the same device as the model
+        device = device or next(self.parameters()).device
+        state = torch.FloatTensor(state).unsqueeze(0).to(device)
+
         mean, log_std = self.forward(state)
         if sample:
             normal = Normal(mean, log_std.exp())
@@ -84,6 +87,7 @@ class Actor(nn.Module):
             x = mean
         action = torch.tanh(x)
         return action[0].detach().cpu().numpy()
+
 
 
 class SAC:

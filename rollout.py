@@ -65,17 +65,36 @@ class RealWorldRobotEnv:
         return total_reward
     
     def compute_gripper_force_reward(self, a0, a1):
-        """Reward the robot for grasping with adequate force (around 200 - 300)."""
-        adequate_force_min = 200
-        adequate_force_max = 300
+        """Reward the robot for maintaining 5% deformation after first contact."""
+        force_threshold = 50
+        desired_ratio = 0.05
+        full_deformation_max = 735
 
+        gripper_pos = self.gripper.get_position()
         average_force = (a0 + a1) / 2
 
-        # If the force is within the adequate range, give a smaller penalty
-        if adequate_force_min <= average_force <= adequate_force_max:
-            return 1  # Positive reward for good grasp
-        else:
-            return -0.5  # Smaller penalty for non-adequate grasp
+        # Step 1: Detect initial contact
+        if average_force >= force_threshold and not hasattr(self, 'init_contact'):
+            self.init_contact = gripper_pos  # Set init_contact once
+
+        # Step 2: If contact hasn't been made yet
+        if not hasattr(self, 'init_contact'):
+            return -0.2  # Small penalty to encourage exploration
+
+        # Step 3: Compute ratio
+        deformation_range = full_deformation_max - self.init_contact
+        if deformation_range <= 0:
+            return -1  # Avoid division by zero or inverted contact
+
+        current_ratio = (gripper_pos - self.init_contact) / deformation_range
+
+        # Step 4: Reward is highest when current_ratio ≈ 0.05
+        error = abs(current_ratio - desired_ratio)
+        reward = -error * 10  # penalize deviation
+
+        # Optional: clip to avoid too negative reward
+        return np.clip(reward, -1.0, 1.0)
+
 
     def compute_sensor_drop_penalty(self):
         """Compute the penalty if sensor values drop significantly over 5 or 10 timesteps."""
@@ -102,6 +121,9 @@ class RealWorldRobotEnv:
         # Reset robot to initial state
         init_pos = self.normalize_action(-1.0)
         self.gripper.set_position(init_pos)
+
+        if hasattr(self, 'init_contact'):
+            del self.init_contact  # Forget contact info every episode
         time.sleep(1.0)
         return self.get_state()
 
