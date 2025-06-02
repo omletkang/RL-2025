@@ -74,11 +74,10 @@ class Actor(nn.Module):
 
         return action, log_prob
 
-    def select_action(self, state, device=None, sample=True):
-        # Ensure state is on the same device as the model
-        device = device or next(self.parameters()).device
-        state = torch.FloatTensor(state).unsqueeze(0).to(device)
-
+    def select_action(self, state, sample=True):
+        # state is already a tensor on correct device
+        if state.ndim == 1:
+            state = state.unsqueeze(0)
         mean, log_std = self.forward(state)
         if sample:
             normal = Normal(mean, log_std.exp())
@@ -87,6 +86,7 @@ class Actor(nn.Module):
             x = mean
         action = torch.tanh(x)
         return action[0].detach().cpu().numpy()
+
 
 
 
@@ -120,8 +120,10 @@ class SAC:
         self.replay_buffer = deque(maxlen=1000000)
 
     def act(self, state, train=True):
-        state = torch.FloatTensor(state).to(self.device)  # Ensure state is on the correct device
-        return self.actor.select_action(state, self.device, sample=train)
+        model_device = next(self.actor.parameters()).device
+        state = torch.FloatTensor(state).to(model_device)
+        return self.actor.select_action(state, sample=train)
+
 
     def update_parameters(self, batch_size=256):
         if len(self.replay_buffer) < batch_size:
@@ -133,9 +135,10 @@ class SAC:
         state, action, reward, next_state, not_done = zip(*batch)
         state = torch.FloatTensor(np.array(state)).to(self.device)
         action = torch.FloatTensor(np.array(action)).to(self.device)
-        reward = torch.FloatTensor(np.array(reward)).to(self.device)
+        reward = torch.FloatTensor(np.array(reward)).unsqueeze(1).to(self.device)
         next_state = torch.FloatTensor(np.array(next_state)).to(self.device)
-        not_done = torch.FloatTensor(np.array(not_done)).to(self.device)
+        not_done = torch.FloatTensor(np.array(not_done)).unsqueeze(1).to(self.device)
+
 
         alpha = self.log_alpha.exp().item()
 

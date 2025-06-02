@@ -168,7 +168,12 @@ def rollout(agent, length=140, train=False, random=False):
 
         # Step 3: Execute and store
         next_state, reward, done, _ = env.step(action)
-        agent.replay_buffer.append([state, action, [reward], next_state, [not done]])
+        # ---- THIS IS THE IMPORTANT PART ----
+        if isinstance(action, np.ndarray):
+            action_to_store = action.astype(np.float32).flatten()
+        else:
+            action_to_store = np.array([float(action)], dtype=np.float32)
+        agent.replay_buffer.append([state, action_to_store, float(reward), next_state, float(not done)]) # action
         episode_return += reward
         state = next_state
 
