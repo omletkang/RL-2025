@@ -20,6 +20,10 @@ class RealWorldRobotEnv:
         self.past_a0 = deque(maxlen=10)  # Past a0 sensor values (10 timesteps)
         self.past_a1 = deque(maxlen=10)  # Past a1 sensor values (10 timesteps)
 
+        # # time penalty
+        # self.step_count = 0
+        # self.time_limit = 140 
+
     def normalize_action(self, a):
         """Map [-1, 1] to [0, 550]"""
         a = np.clip(a, -1, 1)
@@ -40,6 +44,10 @@ class RealWorldRobotEnv:
         self.past_a1.append(a1)
 
         state = np.array([tcp_pose[2], gripper_pos, a0, a1], dtype=np.float32)
+        
+        # # time penalty
+        # time_norm = self.step_count / self.time_limit
+        # state = np.array([tcp_pose[2], gripper_pos, a0, a1, time_norm], dtype=np.float32)
         return state
 
     def step(self, action):
@@ -49,6 +57,8 @@ class RealWorldRobotEnv:
         next_state = self.get_state()
         reward = self.compute_reward(next_state)
         done = False  # For now, we assume infinite horizon
+        ## time penalty
+        # self.step_count += 1
         return next_state, reward, done, {}
 
     def compute_reward(self, state):
@@ -61,6 +71,10 @@ class RealWorldRobotEnv:
         sensor_drop_penalty = self.compute_sensor_drop_penalty()
 
         total_reward = gripper_force_reward + sensor_drop_penalty
+        
+        # # time penalty
+        # time_penalty = self.compute_time_penalty(avg_force)
+        # total_reward = gripper_force_reward + sensor_drop_penalty + time_penalty
 
         return total_reward
     
@@ -117,11 +131,25 @@ class RealWorldRobotEnv:
 
         return -penalty  # Negative penalty for significant drops in sensor readings
 
+    # # time penalty
+    # def compute_time_penalty(self, avg_force):
+    #     late_start   = 50        # Check after 50 steps
+    #     force_threshold  = 50
+    #     time_penalty = -50.0
+    
+    #     if self.step_count >= late_start and avg_force < force_floor:
+    #         return time_penalty
+    #     return 0.0
+
+    
     def reset(self):
         # Reset robot to initial state
         init_pos = self.normalize_action(-1.0)
         self.gripper.set_position(init_pos)
-
+        
+        # # time penalty
+        # self.step_count = 0
+        
         if hasattr(self, 'init_contact'):
             del self.init_contact  # Forget contact info every episode
         time.sleep(1.0)
