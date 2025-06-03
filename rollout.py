@@ -21,6 +21,8 @@ class RealWorldRobotEnv:
         self.past_a1 = deque(maxlen=10)  # Past a1 sensor values (10 timesteps)
 
         # # time penalty
+        self.max_steps = 140
+        self.timestep = 0
         # self.step_count = 0
         # self.time_limit = 140 
 
@@ -43,11 +45,12 @@ class RealWorldRobotEnv:
         self.past_a0.append(a0)
         self.past_a1.append(a1)
 
-        state = np.array([tcp_pose[2], gripper_pos, a0, a1], dtype=np.float32)
+        # state = np.array([tcp_pose[2], gripper_pos, a0, a1], dtype=np.float32)
         
-        # # time penalty
-        # time_norm = self.step_count / self.time_limit
-        # state = np.array([tcp_pose[2], gripper_pos, a0, a1, time_norm], dtype=np.float32)
+        # time penalty
+        timestep_norm = self.timestep / self.max_steps
+        state = np.array([tcp_pose[2], gripper_pos, a0, a1, timestep_norm], dtype=np.float32)
+
         return state
 
     def step(self, action):
@@ -55,11 +58,11 @@ class RealWorldRobotEnv:
         self.gripper.set_position(pos)
         time.sleep(0.01)  # 20 Hz # 100 Hz
         next_state = self.get_state()
-        reward = self.compute_reward(next_state)
+        f_reward, d_reward, t_reward = self.compute_reward(next_state)
         done = False  # For now, we assume infinite horizon
         ## time penalty
-        # self.step_count += 1
-        return next_state, reward, done, {}
+        self.timestep += 1
+        return next_state, t_reward, done, {}, f_reward, d_reward
 
     def compute_reward(self, state):
         a0, a1 = state[2], state[3]
@@ -76,7 +79,7 @@ class RealWorldRobotEnv:
         # time_penalty = self.compute_time_penalty(avg_force)
         # total_reward = gripper_force_reward + sensor_drop_penalty + time_penalty
 
-        return total_reward
+        return gripper_force_reward, sensor_drop_penalty, total_reward
     
     def compute_gripper_force_reward(self, a0, a1):
         """Reward the robot for maintaining 5% deformation after first contact."""
@@ -93,7 +96,7 @@ class RealWorldRobotEnv:
 
         # Step 2: If contact hasn't been made yet
         if not hasattr(self, 'init_contact'):
-            return -0.2  # Small penalty to encourage exploration
+            return -5 # 0.2  # Small penalty to encourage exploration
 
         # Step 3: Compute ratio
         deformation_range = full_deformation_max - self.init_contact
@@ -103,11 +106,11 @@ class RealWorldRobotEnv:
         current_ratio = (gripper_pos - self.init_contact) / deformation_range
 
         # Step 4: Reward is highest when current_ratio ≈ 0.05
-        error = abs(current_ratio - desired_ratio)
+        error = abs(current_ratio)
         reward = -error * 10  # penalize deviation
 
         # Optional: clip to avoid too negative reward
-        return np.clip(reward, -1.0, 1.0)
+        return reward # np.clip(reward, -1.0, 1.0)
 
 
     def compute_sensor_drop_penalty(self):
@@ -120,8 +123,8 @@ class RealWorldRobotEnv:
         a1_change = (self.past_a1[-1] - self.past_a1[0]) / len(self.past_a1)
 
         # If there's a large drop in either sensor value, give a negative reward
-        drop_threshold = -30  # If the sensor drops by more than 50 over 5 timesteps, penalize
-        penalty_factor = 0.01  # Scale the penalty
+        drop_threshold = -15 # 30 # If the sensor drops by more than 50 over 5 timesteps, penalize
+        penalty_factor = 0.1 # 0.01  # Scale the penalty
 
         penalty = 0
         if a0_change < drop_threshold:
@@ -147,8 +150,8 @@ class RealWorldRobotEnv:
         init_pos = self.normalize_action(-1.0)
         self.gripper.set_position(init_pos)
         
-        # # time penalty
-        # self.step_count = 0
+        # time penalty
+        self.timestep = 0
         
         if hasattr(self, 'init_contact'):
             del self.init_contact  # Forget contact info every episode
@@ -174,6 +177,8 @@ def rollout(agent, length=140, train=False, random=False):
     final_z = initial_z + 0.15
 
     episode_return = 0
+    f_return = 0
+    d_return = 0
     state = initial_state
 
     # Flag to check if the robot has started moving
@@ -190,12 +195,12 @@ def rollout(agent, length=140, train=False, random=False):
         if random:
             # action = np.random.uniform(-1, 1)
             # action = np.random.normal(0, 0.3)
-            action = np.random.uniform(0.2, 1)
+            action = np.random.uniform(0.2, 0.8)
         else:
             action = agent.act(state, train=train)
 
         # Step 3: Execute and store
-        next_state, reward, done, _ = env.step(action)
+        next_state, reward, done, _, f_reward, d_reward = env.step(action) # Additional reward
         # ---- THIS IS THE IMPORTANT PART ----
         if isinstance(action, np.ndarray):
             action_to_store = action.astype(np.float32).flatten()
@@ -203,12 +208,15 @@ def rollout(agent, length=140, train=False, random=False):
             action_to_store = np.array([float(action)], dtype=np.float32)
         agent.replay_buffer.append([state, action_to_store, float(reward), next_state, float(not done)]) # action
         episode_return += reward
+        f_return += f_reward
+        d_return += d_reward
         state = next_state
 
         time.sleep(0.04)  # 20Hz # 100 Hz
 
     time.sleep(5.0)  # Hold on for 5 sec
     # After episode
+    print(f"return: {episode_return:.2f} || force return : {f_return:.2f} || drop_return : {d_return:.2f}")
     _ = env.reset()
     env.robot.move_to_initial_pose()  # Move back to initial z
     time.sleep(1.0)  # Allow user to rearrange

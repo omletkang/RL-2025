@@ -117,7 +117,7 @@ class SAC:
         self.log_alpha = torch.zeros(1, requires_grad=True, device=self.device)
         self.alpha_optimizer = torch.optim.Adam([self.log_alpha], lr=3e-4)
 
-        self.replay_buffer = deque(maxlen=1000000)
+        self.replay_buffer = deque(maxlen=7000) # 1000000
 
     def act(self, state, train=True):
         model_device = next(self.actor.parameters()).device
