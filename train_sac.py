@@ -15,7 +15,7 @@ from rollout import rollout, RealWorldRobotEnv
 def main():
     parser = argparse.ArgumentParser(description='Train SAC on Real Robot')
     parser.add_argument('--n_episodes', default=20, type=int)
-    parser.add_argument('--resume', default='', type=str)
+    parser.add_argument('--resume', default='', type=str) # python train_sac.py --n_episodes 50 --resume 'run/2025_06_04_17_41_36'
     args = parser.parse_args()
 
     obs_size = 5  # TCP Z, Gripper Pos, FSR A0, A1
@@ -25,7 +25,7 @@ def main():
 
     epsilon_start = 1.0 # Epsilon
     epsilon_final = 0.02
-    epsilon_decay = 150
+    epsilon_decay = 50 # 100 # 150 # 200 # Smaller epsilon decay -> low probability of random policy !!
 
     os.makedirs('run', exist_ok=True)
 

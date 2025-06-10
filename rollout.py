@@ -17,12 +17,14 @@ class RealWorldRobotEnv:
         self.state_stack = deque(maxlen=1)  # optional: increase to stack states
 
         # Track the last few sensor values (for penalty calculation)
-        self.past_a0 = deque(maxlen=10)  # Past a0 sensor values (10 timesteps)
-        self.past_a1 = deque(maxlen=10)  # Past a1 sensor values (10 timesteps)
+        self.past_a0 = deque(maxlen=5)  # Past a0 sensor values (10 timesteps)
+        self.past_a1 = deque(maxlen=5)  # Past a1 sensor values (10 timesteps)
 
         # # time penalty
         self.max_steps = 140
         self.timestep = 0
+
+        self.reward_scale = 0.007
         # self.step_count = 0
         # self.time_limit = 140 
 
@@ -40,7 +42,6 @@ class RealWorldRobotEnv:
         tcp_pose = self.robot.get_tcp_pose()
         gripper_pos = self.gripper.get_position()
         a0, a1 = self.sensor.read()
-
         # Store the latest sensor readings
         self.past_a0.append(a0)
         self.past_a1.append(a1)
@@ -50,14 +51,15 @@ class RealWorldRobotEnv:
         # time penalty
         timestep_norm = self.timestep / self.max_steps
         state = np.array([tcp_pose[2], gripper_pos, a0, a1, timestep_norm], dtype=np.float32)
-
+        # print(f"[{time.time():.3f}], 5")
         return state
 
     def step(self, action):
         pos = self.normalize_action(action)
         self.gripper.set_position(pos)
-        time.sleep(0.01)  # 20 Hz # 100 Hz
+        # time.sleep(0.01)  # 20 Hz # 100 Hz
         next_state = self.get_state()
+        # print(next_state)
         f_reward, d_reward, t_reward = self.compute_reward(next_state)
         done = False  # For now, we assume infinite horizon
         ## time penalty
@@ -84,38 +86,47 @@ class RealWorldRobotEnv:
     def compute_gripper_force_reward(self, a0, a1):
         """Reward the robot for maintaining 5% deformation after first contact."""
         force_threshold = 50
-        desired_ratio = 0.05
+        desired_ratio = 0.01
         full_deformation_max = 735
 
         gripper_pos = self.gripper.get_position()
         average_force = (a0 + a1) / 2
 
+        # print("average force : %f" % average_force)
         # Step 1: Detect initial contact
         if average_force >= force_threshold and not hasattr(self, 'init_contact'):
             self.init_contact = gripper_pos  # Set init_contact once
-
+            print('Contact is triggered!')
+            print("pos: %f" % gripper_pos)
+        
         # Step 2: If contact hasn't been made yet
         if not hasattr(self, 'init_contact'):
-            return -5 # 0.2  # Small penalty to encourage exploration
+            return -30* self.reward_scale  # 0.2  # Small penalty to encourage exploration
+        
+
+        ### 여기 추가했음 (재현) 250609 11PM
+        if average_force < force_threshold:
+        # Small penalty for losing contact after initial contact
+            return -15 * self.reward_scale
 
         # Step 3: Compute ratio
         deformation_range = full_deformation_max - self.init_contact
         if deformation_range <= 0:
-            return -1  # Avoid division by zero or inverted contact
+            return -1* self.reward_scale   # Avoid division by zero or inverted contact
 
         current_ratio = (gripper_pos - self.init_contact) / deformation_range
 
         # Step 4: Reward is highest when current_ratio ≈ 0.05
-        error = abs(current_ratio)
-        reward = -error * 10  # penalize deviation
+        error = abs(desired_ratio-current_ratio)
+        reward = -error * 5  # penalize deviation
 
         # Optional: clip to avoid too negative reward
-        return reward # np.clip(reward, -1.0, 1.0)
+        return reward * self.reward_scale # np.clip(reward, -1.0, 1.0)
 
 
     def compute_sensor_drop_penalty(self):
         """Compute the penalty if sensor values drop significantly over 5 or 10 timesteps."""
-        if len(self.past_a0) < 10 or len(self.past_a1) < 10:
+        if len(self.past_a0) < 5 or len(self.past_a1) < 5:
             return 0 
         
         # Calculate the average rate of change over the last 5 timesteps
@@ -123,8 +134,8 @@ class RealWorldRobotEnv:
         a1_change = (self.past_a1[-1] - self.past_a1[0]) / len(self.past_a1)
 
         # If there's a large drop in either sensor value, give a negative reward
-        drop_threshold = -15 # 30 # If the sensor drops by more than 50 over 5 timesteps, penalize
-        penalty_factor = 0.1 # 0.01  # Scale the penalty
+        drop_threshold = -6 # 30 # If the sensor drops by more than 50 over 5 timesteps, penalize
+        penalty_factor = 1.2 # 0.01  # Scale the penalty
 
         penalty = 0
         if a0_change < drop_threshold:
@@ -132,7 +143,7 @@ class RealWorldRobotEnv:
         if a1_change < drop_threshold:
             penalty += abs(a1_change) * penalty_factor
 
-        return -penalty  # Negative penalty for significant drops in sensor readings
+        return -penalty * self.reward_scale  # Negative penalty for significant drops in sensor readings
 
     # # time penalty
     # def compute_time_penalty(self, avg_force):
@@ -199,8 +210,11 @@ def rollout(agent, length=140, train=False, random=False):
         else:
             action = agent.act(state, train=train)
 
+        # print(f"[{time.time():.3f}], 5")
+
         # Step 3: Execute and store
         next_state, reward, done, _, f_reward, d_reward = env.step(action) # Additional reward
+
         # ---- THIS IS THE IMPORTANT PART ----
         if isinstance(action, np.ndarray):
             action_to_store = action.astype(np.float32).flatten()
@@ -211,8 +225,9 @@ def rollout(agent, length=140, train=False, random=False):
         f_return += f_reward
         d_return += d_reward
         state = next_state
+        
 
-        time.sleep(0.04)  # 20Hz # 100 Hz
+        # time.sleep(0.04)  # 20Hz # 100 Hz
 
     time.sleep(5.0)  # Hold on for 5 sec
     # After episode

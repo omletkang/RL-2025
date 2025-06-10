@@ -97,7 +97,7 @@ class SAC:
                  act_size,
                  hidden_size=256,
                  gamma=0.99,
-                 tau=0.005):
+                 tau=0.005): # 0.005
         self.device = device
         self.gamma = gamma
         self.tau = tau
