@@ -192,6 +192,11 @@ def rollout(agent, length=140, train=False, random=False):
     d_return = 0
     state = initial_state
 
+    history_dict = {"f_reward": [],
+                    "d_reward": [],
+                    "state": [],
+                    }
+
     # Flag to check if the robot has started moving
     robot_moving = False
 
@@ -210,10 +215,18 @@ def rollout(agent, length=140, train=False, random=False):
         else:
             action = agent.act(state, train=train)
 
-        # print(f"[{time.time():.3f}], 5")
+        print(f"[{time.time():.3f}], {t}")
 
         # Step 3: Execute and store
         next_state, reward, done, _, f_reward, d_reward = env.step(action) # Additional reward
+
+        # Record
+        history_dict["f_reward"].append(f_reward)
+        history_dict["d_reward"].append(d_reward)
+        history_dict["state"].append(state.tolist())
+
+
+        print(f"[{time.time():.3f}], {t}")
 
         # ---- THIS IS THE IMPORTANT PART ----
         if isinstance(action, np.ndarray):
@@ -237,4 +250,4 @@ def rollout(agent, length=140, train=False, random=False):
     time.sleep(1.0)  # Allow user to rearrange
     env.close()
 
-    return episode_return
+    return episode_return, history_dict

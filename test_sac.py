@@ -1,86 +1,118 @@
 import os
-import csv
-import argparse
+import json
 import pickle
-from datetime import datetime
-from collections import deque
-
-import torch
+import argparse
 import numpy as np
+from datetime import datetime
+from rollout import rollout
+from sac import SAC
+import torch
 
-from sac import SAC 
-from rollout import RealWorldRobotEnv
-
-# ========== 테스트용 rollout ==========
-def rollout_test(agent, length=140):
-    env = RealWorldRobotEnv()
-    state = env.reset()
-    env.robot.move_to_initial_pose()
-    init_z = env.robot.get_tcp_pose()[2]
-    final_z = init_z + 0.15
-
-    episode_return = 0.0
-    force_return = 0.0
-    drop_return = 0.0
-
-    for t in range(length):
-        if t == 80:                      # 물체를 들어 올리는 구간
-            env.robot.set_tcp_z(final_z)
-
-        action = agent.act(state, train=False)   # 순수 정책
-        next_state, r, _, _, f_r, d_r = env.step(action)
-
-        episode_return += r
-        force_return += f_r
-        drop_return  += d_r
-        state = next_state
-
-    env.reset()
-    env.robot.move_to_initial_pose()
-    env.close()
-    return episode_return, force_return, drop_return
-# ======================================
 
 def main():
-    parser = argparse.ArgumentParser(description="SAC controller test")
-    parser.add_argument("--checkpoint", required=True, help="pickle file path")
-    parser.add_argument("--n_tests", type=int, default=5)
-    parser.add_argument("--csv", default="")
+    parser = argparse.ArgumentParser(description='Evaluate SAC Policy on Real Robot')
+    parser.add_argument('--model_path', type=str, required=True,
+                        help='Path to the saved SAC pickle file (e.g., run/2025_06_04_17_41_36/sac_19.pickle)')
+    parser.add_argument('--n_episodes', type=int, default=5,
+                        help='Number of evaluation episodes (default: 5)')
+    parser.add_argument('--log', action='store_true',
+                        help='Log episode results to a JSON file (default: False)')
+    parser.add_argument('-object', type=str, # required=True,
+                            help='Name of the object being tested (e.g., "bottle", "can")')
     args = parser.parse_args()
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    assert os.path.exists(args.model_path), f"Model file does not exist: {args.model_path}"
 
-    # 학습된 SAC 로드
-    with open(args.checkpoint, "rb") as f:
-        sac: SAC = pickle.load(f)
-    sac.actor.to(device).eval()          # 평가 모드
-    sac.critic = None                    # 메모리 절약
-    sac.replay_buffer = deque(maxlen=1)  # 버퍼 비활성화
+    # Set up JSON log
+    log_path = None
+    if args.log:
+        # Create a descriptive log file name from the model path
+        model_name = os.path.splitext(os.path.basename(args.model_path))[0]
+        run_folder = os.path.basename(os.path.dirname(args.model_path))
+        log_filename = f"{run_folder}-{model_name}.json"
+        # log_filename = f"{run_folder}-{model_name}-{args.object}.json"
 
-    # 결과 저장용 CSV 설정
-    if args.csv == "":
-        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        csv_path = f"test_result_{stamp}.csv"
-    else:
-        csv_path = args.csv
-    write_header = not os.path.exists(csv_path)
+        # Define and create the output directory
+        output_dir = "output"
+        os.makedirs(output_dir, exist_ok=True)
+        log_path = os.path.join(output_dir, log_filename)
+        print(f"Logging results to: {log_path}")
 
-    with open(csv_path, "a", newline="") as f_csv:
-        writer = csv.writer(f_csv)
-        if write_header:
-            writer.writerow(["episode", "return", "force_r", "drop_r"])
 
-        returns = []
-        for ep in range(args.n_tests):
-            ep_ret, f_ret, d_ret = rollout_test(sac)
-            returns.append(ep_ret)
-            writer.writerow([ep, ep_ret, f_ret, d_ret])
-            print(f"Ep {ep:02d}: total {ep_ret:.2f} | force {f_ret:.2f} | drop {d_ret:.2f}")
+    # Load SAC agent
+    with open(args.model_path, 'rb') as f:
+        sac = pickle.load(f)
 
-    mean_ret = np.mean(returns)
-    std_ret  = np.std(returns)
-    print(f"\n평균 리턴 {mean_ret:.2f} ± {std_ret:.2f}")
-    print(f"세부 결과 CSV 저장 위치: {csv_path}")
+    sac.actor.to('cpu')  # Ensure inference runs on CPU for real robot
+
+    all_returns = []
+    episode_logs = []
+    history_logs = []
+        
+    # Define the mapping from status code to a descriptive string
+    status_map = {
+        0: "success",
+        1: "fail-notouch",
+        2: "fail-drop",
+        3: "fail-break"
+    }
+
+    print(f"\nEvaluating {args.n_episodes} episodes using model: {args.model_path}\n")
+
+    for i in range(args.n_episodes):
+        print(f"Episode {i + 1}:")
+        episode_return, history_dict = rollout(sac, train=False, random=False) # history_dict
+        all_returns.append(episode_return)
+
+        # Get user input for success/fail status
+        if args.log:
+            status_code = -1
+            while status_code not in status_map:
+                try:
+                    prompt = "Enter status (0: success, 1: fail-notouch, 2: fail-drop, 3: fail-break): "
+                    user_input = input(prompt)
+                    status_code = int(user_input)
+                    if status_code not in status_map:
+                        print("Invalid input. Please enter 0, 1, 2, or 3.")
+                except ValueError:
+                    print("Invalid input. Please enter a number.")
+            
+            # Record the log for this episode
+            episode_data = {
+                "episode": i + 1,
+                "return": episode_return,
+                "status_code": status_code,
+                "status_text": status_map[status_code]
+            }
+            episode_logs.append(episode_data)
+
+            history_logs.append(history_dict)
+
+        print("------------------------")
+
+    mean_return = np.mean(all_returns)
+    std_return = np.std(all_returns)
+
+    print(f"\nEvaluation Summary:")
+    print(f"Mean Return: {mean_return:.2f} | Std Dev: {std_return:.2f}")
+
+    # Write all collected data to the JSON file at the end ---
+    if args.log:
+        log_data = {
+            "model_path": args.model_path,
+            "evaluation_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "episodes": episode_logs,
+            "history": history_logs,
+            "summary": {
+                "mean_return": round(mean_return, 4),
+                "std_return": round(std_return, 4)
+            }
+        }
+        
+        with open(log_path, 'w') as f:
+            json.dump(log_data, f, indent=4)
+        
+        print(f"\nSuccessfully saved evaluation log to {log_path}")
 
 if __name__ == "__main__":
     main()

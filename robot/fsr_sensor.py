@@ -78,7 +78,44 @@ class FSRSensor:
                 except (ValueError, UnicodeDecodeError) as e:
                     print(f"Exception: {e}, line: {repr(line)}")
                     continue
+    # def read(self):
+    #     """
+    #     시리얼 포트에서 한 줄을 읽어 정수 값 두 개를 반환합니다.
+    #     timeout을 사용하여 프로그램이 멈추는 것을 방지합니다.
+    #     """
+    #     try:
+    #         # readline()은 timeout 시간 동안 기다렸다가 데이터가 없으면 빈 바이트(b'')를 반환합니다.
+    #         line_bytes = self.ser.readline()
 
+    #         # 타임아웃으로 인해 빈 데이터가 수신된 경우
+    #         if not line_bytes:
+    #             # print("Warning: No data received within timeout period.")
+    #             return None, None # 또는 이전 값을 유지하거나 다른 적절한 처리를 합니다.
+
+    #         # 수신된 데이터를 디코딩
+    #         line = line_bytes.decode('utf-8', errors='ignore').strip()
+
+    #         if not line:
+    #             return None, None
+
+    #         # 데이터 파싱
+    #         parts = line.split(",")
+    #         if len(parts) != 2:
+    #             print(f"Warning: Unexpected sensor value format '{line}'")
+    #             return None, None
+            
+    #         val0, val1 = map(int, parts)
+    #         return val0, val1
+
+    #     except (ValueError, UnicodeDecodeError) as e:
+    #         # 데이터 포맷이 잘못되었거나(e.g. "123,abc"), 디코딩 오류가 발생한 경우
+    #         print(f"Exception during parsing: {e}, on line: {repr(line_bytes)}")
+    #         return None, None
+    #     except Exception as e:
+    #         # 그 외 시리얼 통신 관련 예외 처리
+    #         print(f"An unexpected error occurred: {e}")
+    #         return None, None
+    
     def close(self):
         self.ser.close()
 
